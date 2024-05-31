@@ -1,0 +1,4 @@
+   Hi There! I'm Sachin and this is the result of input.txt file
+
+Line Count: 13
+Word Count: 94

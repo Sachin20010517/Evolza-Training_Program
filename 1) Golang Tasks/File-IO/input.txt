@@ -1,0 +1,13 @@
+I love devOps
+I am good at cloud computing and devOps
+
+1- Middleware
+
+Middleware is used for a variety of purposes, such as:
+
+Logging: To log details of incoming requests.
+Authentication: To check if a user is authenticated before accessing certain routes.
+Authorization: To check if a user has permission to access a certain resource.
+Rate Limiting: To limit the number of requests a user can make to prevent abuse.
+Error Handling: To catch and handle errors in a standardized way.
+Request Parsing: To parse and manipulate incoming requests, such as JSON body parsing

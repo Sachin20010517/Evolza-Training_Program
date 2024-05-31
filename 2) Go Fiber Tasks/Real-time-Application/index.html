@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebSocket Test</title>
+</head>
+<body>
+    <h1>WebSocket Test</h1>
+    <!-- Input field for typing messages -->
+    <input type="text" id="message" placeholder="Type a message">
+    <!-- Button to send the typed message -->
+    <button onclick="sendMessage()">Send</button>
+    <!-- Preformatted text area to display messages -->
+    <pre id="output"></pre>
+
+    <script>
+        // Get reference to the output area
+        const output = document.getElementById('output');
+        // Create a new WebSocket connection to the server
+        const ws = new WebSocket('ws://localhost:3000/ws');
+
+        // Event handler for when the WebSocket connection is established
+        ws.onopen = () => {
+            output.textContent += 'WebSocket connection established\n';
+        };
+
+        // Event handler for when a message is received from the server
+        ws.onmessage = (event) => {
+            output.textContent += `Received: ${event.data}\n`;
+        };
+
+        // Function to send a message to the server
+        function sendMessage() {
+            // Get the message from the input field
+            const message = document.getElementById('message').value;
+            // Send the message through the WebSocket connection
+            ws.send(message);
+            // Display the sent message in the output area
+            output.textContent += `Sent: ${message}\n`;
+        }
+    </script>
+</body>
+</html>

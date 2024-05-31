@@ -33,5 +33,5 @@ func updateUser(c *fiber.Ctx) error {
 }
 
 func deleteUser(c *fiber.Ctx) error {
-
+	return c.SendString("The user has been deleted successfully ")
 }

@@ -17,7 +17,7 @@ func main() {
 	// Middleware for basic authentication for the private directory
 	app.Use("/private", basicauth.New(basicauth.Config{
 		Users: map[string]string{
-			"user": "password", // Replace with your username and password
+			"user1": "password1", // Replace with your username and password
 		},
 	}))
 

@@ -1,0 +1,8 @@
+Product Inventory Report - {{ .Month }} {{ .Year }}
+=====================================
+
+{{ range .Products }}
+Product Name: {{ . }}
+-------------------------------------
+{{ end }}
+

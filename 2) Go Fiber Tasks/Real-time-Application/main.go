@@ -1,47 +1,68 @@
 package main
 
 import (
-	"log" // Import log package for logging
+	"log"
+	"sync"
 
-	"github.com/gofiber/fiber/v2"     // Import Fiber package
-	"github.com/gofiber/websocket/v2" // Import WebSocket package for Fiber
+	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/websocket/v2"
 )
 
+var clients = make(map[*websocket.Conn]bool)
+var broadcast = make(chan Message)
+var mu sync.Mutex
+
+// Message defines the structure of the chat messages
+type Message struct {
+	Username string `json:"username"`
+	Content  string `json:"content"`
+}
+
 func main() {
-	// Create a new Fiber instance
 	app := fiber.New()
 
-	// WebSocket route
-	app.Get("/ws", websocket.New(websocketHandler))
+	app.Static("/", "./")
 
-	// Start the server on port 3000
+	// WebSocket route
+	app.Get("/ws", websocket.New(func(c *websocket.Conn) {
+		mu.Lock()
+		clients[c] = true
+		mu.Unlock()
+
+		defer func() {
+			mu.Lock()
+			delete(clients, c)
+			mu.Unlock()
+			c.Close()
+		}()
+
+		var msg Message
+		for {
+			if err := c.ReadJSON(&msg); err != nil {
+				log.Println("read:", err)
+				break
+			}
+			broadcast <- msg
+		}
+	}))
+
+	// Start listening for incoming chat messages
+	go handleMessages()
+
 	log.Fatal(app.Listen(":3000"))
 }
 
-// websocketHandler handles WebSocket connections
-func websocketHandler(c *websocket.Conn) {
-	defer func() {
-		// Recover from panic, if any
-		if r := recover(); r != nil {
-			log.Println("Recovered in websocketHandler:", r)
-		}
-	}()
-
+func handleMessages() {
 	for {
-		// Read message from the client
-		mt, msg, err := c.ReadMessage()
-		if err != nil {
-			log.Println("Read error:", err)
-			break // Break the loop on read error
+		msg := <-broadcast
+		mu.Lock()
+		for client := range clients {
+			if err := client.WriteJSON(msg); err != nil {
+				log.Printf("error: %v", err)
+				client.Close()
+				delete(clients, client)
+			}
 		}
-
-		log.Printf("Received: %s", msg) // Log the received message
-
-		// Echo the message back to the client
-		err = c.WriteMessage(mt, msg)
-		if err != nil {
-			log.Println("Write error:", err)
-			break // Break the loop on write error
-		}
+		mu.Unlock()
 	}
 }

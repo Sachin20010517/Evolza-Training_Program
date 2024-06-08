@@ -1,40 +1,79 @@
 package main
 
 import (
+	"context"
 	"fmt"
+	"log"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
+	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 // User represents a simple User model
 type User struct {
-	Id   string `json:"id"`
-	Name string `json:"name"`
-	Age  int    `json:"age"`
+	Id   primitive.ObjectID `json:"id,omitempty" bson:"_id,omitempty"`
+	Name string             `json:"name" bson:"name"`
+	Age  int                `json:"age" bson:"age"`
 }
 
-// to store users
-var userList = map[string]User{}
+// Global variable to hold the user collection
+var userCollection *mongo.Collection
 
 func main() {
+	// Replace these with your actual credentials
+	username := "<sachinayeshmantha>"
+	password := "Ab2KA8z3OfR3vCQP"
+	database := "microservice-1"
+
+	// Create a new MongoDB client and connect to the server
+	clientOptions := options.Client().ApplyURI(
+		fmt.Sprintf("mongodb+srv://%s:%s@cluster0.3vcczsb.mongodb.net/%s?retryWrites=true&w=majority&authMechanism=SCRAM-SHA-256",
+			username, password, database))
+
+	client, err := mongo.NewClient(clientOptions)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// Set a context with a timeout to avoid blocking
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	// Connect to MongoDB
+	err = client.Connect(ctx)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer client.Disconnect(ctx)
+
+	// Ping the primary to verify the connection
+	err = client.Ping(ctx, nil)
+	if err != nil {
+		log.Fatalf("Failed to connect to database: %v", err)
+	}
+
+	// Select the database and collection
+	userCollection = client.Database(database).Collection("users")
 
 	// Create a new Fiber instance
 	app := fiber.New()
 
+	// Define routes
 	app.Post("/users", createUser)
-
 	app.Get("/users/:id", getUserById)
-
 	app.Get("/users", getAllUsers)
-
 	app.Delete("/users/:id", deleteUser)
-
 	app.Put("/users/:id", updateUser)
 
+	// Start the server on port 3000
 	app.Listen(":3000")
-
 }
 
+// createUser handles the creation of a new user
 func createUser(c *fiber.Ctx) error {
 	// Create a new User instance
 	newUser := new(User)
@@ -44,80 +83,113 @@ func createUser(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).SendString(err.Error())
 	}
 
-	// Store the user in the in-memory map
-	userList[newUser.Id] = *newUser
+	// Insert the new user into the database
+	result, err := userCollection.InsertOne(context.Background(), newUser)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).SendString(err.Error())
+	}
+
+	// Set the generated ID to the new user
+	newUser.Id = result.InsertedID.(primitive.ObjectID)
 
 	// Create a response message
 	response := fiber.Map{
-		"message": "A new user (" + newUser.Name + ") has been created",
+		"message": fmt.Sprintf("A new user (%s) has been created", newUser.Name),
+		"user":    newUser,
 	}
 
 	// Return the created user as JSON
-	// return c.Status(fiber.StatusCreated).JSON(response)
-	responseString := fmt.Sprintf("%v", response) // Convert response to string
-	return c.Status(fiber.StatusCreated).SendString(responseString)
-
+	return c.Status(fiber.StatusCreated).JSON(response)
 }
 
+// getUserById handles retrieving a user by their ID
 func getUserById(c *fiber.Ctx) error {
 	// Extract the user ID from the URL
-	id := c.Params("id")
+	idParam := c.Params("id")
 
-	// Retrieve the user from the map, save the user in in new variable
-	userById, exists := userList[id]
+	// Convert the ID to an ObjectID
+	id, err := primitive.ObjectIDFromHex(idParam)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).SendString("Invalid ID format")
+	}
 
-	//If user can't find,
-	if !exists {
-		return c.Status(fiber.StatusNotFound).SendString("User not found!. Try Again")
+	// Retrieve the user from the database
+	var user User
+	err = userCollection.FindOne(context.Background(), bson.M{"_id": id}).Decode(&user)
+	if err == mongo.ErrNoDocuments {
+		return c.Status(fiber.StatusNotFound).SendString("User not found")
+	} else if err != nil {
+		return c.Status(fiber.StatusInternalServerError).SendString(err.Error())
 	}
 
 	// Return the user as JSON
-	return c.JSON(userById)
-
+	return c.JSON(user)
 }
 
+// getAllUsers handles retrieving all users
 func getAllUsers(c *fiber.Ctx) error {
-	//To retrieve all user  with all details at the same time
-	//return c.JSON(userList)
+	// Find all users in the database
+	cursor, err := userCollection.Find(context.Background(), bson.M{})
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).SendString(err.Error())
+	}
+	defer cursor.Close(context.Background())
 
-	allUsers_slice := []User{}
-
-	for _, user := range userList {
-		allUsers_slice = append(allUsers_slice, user)
+	// Iterate through the cursor and decode each document
+	var users []User
+	for cursor.Next(context.Background()) {
+		var user User
+		cursor.Decode(&user)
+		users = append(users, user)
 	}
 
-	return c.JSON(allUsers_slice)
+	// Check for errors after iterating through the cursor
+	if err := cursor.Err(); err != nil {
+		return c.Status(fiber.StatusInternalServerError).SendString(err.Error())
+	}
 
+	// Return the list of users as JSON
+	return c.JSON(users)
 }
 
+// deleteUser handles deleting a user by their ID
 func deleteUser(c *fiber.Ctx) error {
 	// Extract the user ID from the URL
-	id := c.Params("id")
+	idParam := c.Params("id")
 
-	_, exists := userList[id]
-
-	//If user can't find,
-	if !exists {
-		return c.Status(fiber.StatusNotFound).SendString("User not found!. Try Again")
+	// Convert the ID to an ObjectID
+	id, err := primitive.ObjectIDFromHex(idParam)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).SendString("Invalid ID format")
 	}
 
-	delete(userList, id)
+	// Delete the user from the database
+	result, err := userCollection.DeleteOne(context.Background(), bson.M{"_id": id})
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).SendString(err.Error())
+	}
+
+	// Check if any document was deleted
+	if result.DeletedCount == 0 {
+		return c.Status(fiber.StatusNotFound).SendString("User not found")
+	}
 
 	// Return a success message
-	return c.SendString("User " + id + " deleted successfully")
+	return c.SendString("User deleted successfully")
 }
 
+// updateUser handles updating a user by their ID
 func updateUser(c *fiber.Ctx) error {
-	id := c.Params("id")
+	// Extract the user ID from the URL
+	idParam := c.Params("id")
 
-	//check whether user exist or not
-	_, exists := userList[id]
-
-	if !exists {
-		return c.Status(fiber.StatusNotFound).SendString("User not found!. Try Again")
+	// Convert the ID to an ObjectID
+	id, err := primitive.ObjectIDFromHex(idParam)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).SendString("Invalid ID format")
 	}
 
-	// Create a new User instance
+	// Create a new User instance to hold the updated data
 	updatedUser := new(User)
 
 	// Parse the request body into the User instance
@@ -125,11 +197,28 @@ func updateUser(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).SendString(err.Error())
 	}
 
-	// Update the user in the map
+	// Create an update document
+	update := bson.M{
+		"$set": bson.M{
+			"name": updatedUser.Name,
+			"age":  updatedUser.Age,
+		},
+	}
+
+	// Update the user in the database
+	result, err := userCollection.UpdateOne(context.Background(), bson.M{"_id": id}, update)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).SendString(err.Error())
+	}
+
+	// Check if any document was matched and modified
+	if result.MatchedCount == 0 {
+		return c.Status(fiber.StatusNotFound).SendString("User not found")
+	}
+
+	// Set the updated ID to the user
 	updatedUser.Id = id
-	userList[id] = *updatedUser
 
 	// Return the updated user as JSON
 	return c.JSON(updatedUser)
-
 }

@@ -3,41 +3,31 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>WebSocket Test</title>
+    <title>Chat App</title>
 </head>
 <body>
-    <h1>WebSocket Test</h1>
-    <!-- Input field for typing messages -->
-    <input type="text" id="message" placeholder="Type a message">
-    <!-- Button to send the typed message -->
-    <button onclick="sendMessage()">Send</button>
-    <!-- Preformatted text area to display messages -->
-    <pre id="output"></pre>
+    <h1>Chat App</h1>
+    <div id="chatbox" style="height: 300px; overflow-y: scroll; border: 1px solid #ccc;"></div>
+    <input type="text" id="username" placeholder="Username"><br>
+    <input type="text" id="message" placeholder="Message"><button onclick="sendMessage()">Send</button>
 
     <script>
-        // Get reference to the output area
-        const output = document.getElementById('output');
-        // Create a new WebSocket connection to the server
         const ws = new WebSocket('ws://localhost:3000/ws');
 
-        // Event handler for when the WebSocket connection is established
-        ws.onopen = () => {
-            output.textContent += 'WebSocket connection established\n';
+        ws.onmessage = function(event) {
+            const msg = JSON.parse(event.data);
+            const chatbox = document.getElementById('chatbox');
+            chatbox.innerHTML += '<p><strong>' + msg.username + ':</strong> ' + msg.content + '</p>';
+            chatbox.scrollTop = chatbox.scrollHeight;
         };
 
-        // Event handler for when a message is received from the server
-        ws.onmessage = (event) => {
-            output.textContent += `Received: ${event.data}\n`;
-        };
-
-        // Function to send a message to the server
         function sendMessage() {
-            // Get the message from the input field
+            const username = document.getElementById('username').value;
             const message = document.getElementById('message').value;
-            // Send the message through the WebSocket connection
-            ws.send(message);
-            // Display the sent message in the output area
-            output.textContent += `Sent: ${message}\n`;
+            if (username && message) {
+                ws.send(JSON.stringify({username: username, content: message}));
+                document.getElementById('message').value = '';
+            }
         }
     </script>
 </body>
